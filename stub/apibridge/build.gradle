@@ -1,0 +1,12 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = rootProject.ext.java
+    targetCompatibility = rootProject.ext.java
+}
+
+dependencies {
+    compileOnly(project(':stub'))
+}

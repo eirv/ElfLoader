@@ -1,0 +1,52 @@
+plugins {
+    alias(libs.plugins.androidApplication)
+}
+
+android {
+    namespace 'io.github.eirv.elfloader'
+    compileSdk rootProject.ext.compileSdk
+    ndkVersion rootProject.ext.ndk
+
+    defaultConfig {
+        applicationId "io.github.eirv.elfloader"
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdk
+        versionCode rootProject.ext.versionCode
+        versionName rootProject.ext.version
+
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++23'
+                arguments += '-DANDROID_STL=none'
+                arguments += '-DCMAKE_BUILD_TYPE=Release'
+            }
+        }
+        ndk.abiFilters 'armeabi-v7a', 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64', 'riscv64'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility rootProject.ext.java
+        targetCompatibility rootProject.ext.java
+    }
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version rootProject.ext.cmake
+        }
+    }
+    packagingOptions {
+        jniLibs.useLegacyPackaging true
+    }
+}
+
+dependencies {
+    compileOnly(project(':stub'))
+    implementation(project(':elfloader'))
+    implementation(project(':stub:apibridge'))
+}

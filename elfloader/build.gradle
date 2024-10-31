@@ -1,0 +1,30 @@
+plugins {
+    alias(libs.plugins.androidLibrary)
+}
+
+android {
+    namespace 'io.github.eirv.elfloader.core'
+    compileSdk rootProject.ext.compileSdk
+
+    defaultConfig {
+        minSdk rootProject.ext.minSdk
+
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility rootProject.ext.java
+        targetCompatibility rootProject.ext.java
+    }
+}
+
+dependencies {
+    compileOnly(project(':stub'))
+    implementation(project(':stub:apibridge'))
+}

@@ -1,0 +1,17 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidLibrary) apply false
+}
+
+ext {
+    compileSdk = 34
+    ndk = '29.0.12580605'
+    cmake = '3.22.1'
+    java = JavaVersion.VERSION_17
+
+    minSdk = 24
+    targetSdk = 33
+    version = '1.0.0'
+    versionCode = 1
+}
