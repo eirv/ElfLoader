@@ -406,6 +406,11 @@ public class ElfLoader {
             throw new UnsupportedOperationException("memfd not available");
         }
 
+        // TODO: Supports more architectures
+        if (!"arm64".equals(ApiBridge.VMRuntime_vmInstructionSet())) {
+            throw new UnsupportedOperationException("Function not implemented");
+        }
+
         if (libraryId == null) {
             var random = new Random();
             char[] chars = new char[16];
