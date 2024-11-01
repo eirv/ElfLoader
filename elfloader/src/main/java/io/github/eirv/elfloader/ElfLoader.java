@@ -441,14 +441,18 @@ public class ElfLoader {
         }
         putString(mmapAddress + SHELLCODE_SIZE, libraryName);
 
-        var result = callNativeMethod();
+        long result;
 
-        if (libraryFdOffset != 0) {
-            theUnsafe.putInt(mmapAddress + libraryFdOffset, 0);
-        }
         try {
-            Os.close(fd);
-        } catch (ErrnoException ignored) {
+            result = callNativeMethod();
+        } finally {
+            if (libraryFdOffset != 0) {
+                theUnsafe.putInt(mmapAddress + libraryFdOffset, 0);
+            }
+            try {
+                Os.close(fd);
+            } catch (ErrnoException ignored) {
+            }
         }
 
         var msg =
