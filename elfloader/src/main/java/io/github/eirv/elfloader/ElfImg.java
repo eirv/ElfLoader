@@ -25,10 +25,12 @@ import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.HashMap;
+import java.util.Map;
 
 public class ElfImg {
     private static final int EI_CLASS = 4;
     private static final int EI_NIDENT = 16;
+    private static final int SHT_SYMTAB = 2;
     private static final int SHT_DYNSYM = 11;
     private static final int SHN_UNDEF = 0;
     private static final int PT_LOAD = 1;
@@ -36,6 +38,10 @@ public class ElfImg {
     private final HashMap<String, Long> symbols = new HashMap<>();
 
     public ElfImg(String filename) {
+        this(filename, false);
+    }
+
+    public ElfImg(String filename, boolean searchDebugSymbols) {
         try {
             filename = new File(filename).getCanonicalPath();
         } catch (IOException ignored) {
@@ -82,26 +88,6 @@ public class ElfImg {
             var e_shentsize = elf.getShort();
             var e_shnum = elf.getShort();
 
-            var dynsym_offset = 0;
-            var dynsym_count = 0;
-            var dynstr_offset = 0;
-            var dynstr_size = 0;
-            for (var i = 0; e_shnum > i; i++) {
-                elf.position(shoff + i * e_shentsize + 4);
-                var sh_type = elf.getInt();
-                if (sh_type != SHT_DYNSYM) continue;
-                elf.position(elf.position() + ptr * 2);
-                dynsym_offset = (int) getPointer(elf, is64Bit);
-                var sh_size = getPointer(elf, is64Bit);
-                var sh_link = elf.getInt();
-                elf.position(elf.position() + 4 + ptr);
-                dynsym_count = (int) (sh_size / getPointer(elf, is64Bit));
-                elf.position(shoff + sh_link * e_shentsize + 4 * 2 + ptr * 2);
-                dynstr_offset = (int) getPointer(elf, is64Bit);
-                dynstr_size = (int) getPointer(elf, is64Bit);
-                break;
-            }
-
             var min_vaddr = Integer.MAX_VALUE;
             for (var i = 0; e_phnum > i; i++) {
                 elf.position(phoff + i * e_phentsize);
@@ -113,35 +99,104 @@ public class ElfImg {
             }
             base -= min_vaddr;
 
-            var dynstr = new byte[dynstr_size];
-            elf.position(dynstr_offset);
-            elf.get(dynstr);
+            var dynsym_offset = 0;
+            var dynsym_count = 0;
+            var dynstr_offset = 0;
+            var dynstr_size = 0;
 
-            elf.position(dynsym_offset);
-            var symbols = this.symbols;
-            for (var n = 0; dynsym_count > n; n++) {
-                var st_name = elf.getInt();
-                long st_value;
-                if (is64Bit) {
-                    elf.position(elf.position() + 1 + 1 + 2);
-                    st_value = elf.getLong();
-                    var st_size = elf.getLong();
-                    if (st_size == 0) continue;
+            var symtab_offset = 0;
+            var symtab_count = 0;
+            var strtab_offset = 0;
+            var strtab_size = 0;
+
+            for (var i = 0; e_shnum > i; i++) {
+                elf.position(shoff + i * e_shentsize + 4);
+                var sh_type = elf.getInt();
+                if (sh_type != SHT_DYNSYM && (!searchDebugSymbols || sh_type != SHT_SYMTAB))
+                    continue;
+                elf.position(elf.position() + ptr * 2);
+                var sym_offset = (int) getPointer(elf, is64Bit);
+                var sh_size = getPointer(elf, is64Bit);
+                var sh_link = elf.getInt();
+                elf.position(elf.position() + 4 + ptr);
+                var sym_count = (int) (sh_size / getPointer(elf, is64Bit));
+                elf.position(shoff + sh_link * e_shentsize + 4 * 2 + ptr * 2);
+                var str_offset = (int) getPointer(elf, is64Bit);
+                var str_size = (int) getPointer(elf, is64Bit);
+                if (sh_type == SHT_DYNSYM) {
+                    dynsym_offset = sym_offset;
+                    dynsym_count = sym_count;
+                    dynstr_offset = str_offset;
+                    dynstr_size = str_size;
+                    if (!searchDebugSymbols) break;
                 } else {
-                    st_value = elf.getInt();
-                    var st_size = elf.getInt();
-                    elf.position(elf.position() + 1 + 1 + 2);
-                    if (st_size == 0) continue;
+                    symtab_offset = sym_offset;
+                    symtab_count = sym_count;
+                    strtab_offset = str_offset;
+                    strtab_size = str_size;
                 }
-                if (st_name == SHN_UNDEF) continue;
-                var length = -1;
-                //noinspection StatementWithEmptyBody
-                while (dynstr[st_name + ++length] != 0)
-                    ;
-                if (length == 0) continue;
-                symbols.put(new String(dynstr, st_name, length), base + st_value);
+                if (dynsym_count != 0 && symtab_count != 0) break;
+            }
+
+            searchSymbols(
+                    symbols,
+                    base,
+                    elf,
+                    is64Bit,
+                    dynsym_offset,
+                    dynsym_count,
+                    dynstr_offset,
+                    dynstr_size);
+            if (searchDebugSymbols) {
+                searchSymbols(
+                        symbols,
+                        base,
+                        elf,
+                        is64Bit,
+                        symtab_offset,
+                        symtab_count,
+                        strtab_offset,
+                        strtab_size);
             }
         } catch (IOException ignored) {
+        }
+    }
+
+    private static void searchSymbols(
+            HashMap<String, Long> result,
+            long base,
+            MappedByteBuffer elf,
+            boolean is64Bit,
+            int sym_off,
+            int sym_count,
+            int str_off,
+            int str_size) {
+        var strings = new byte[str_size];
+        elf.position(str_off);
+        elf.get(strings);
+
+        elf.position(sym_off);
+        for (var n = 0; sym_count > n; n++) {
+            var st_name = elf.getInt();
+            long st_value;
+            if (is64Bit) {
+                elf.position(elf.position() + 1 + 1 + 2);
+                st_value = elf.getLong();
+                var st_size = elf.getLong();
+                if (st_size == 0) continue;
+            } else {
+                st_value = elf.getInt();
+                var st_size = elf.getInt();
+                elf.position(elf.position() + 1 + 1 + 2);
+                if (st_size == 0) continue;
+            }
+            if (st_name == SHN_UNDEF) continue;
+            var length = -1;
+            //noinspection StatementWithEmptyBody
+            while (strings[st_name + ++length] != 0)
+                ;
+            if (length == 0) continue;
+            result.put(new String(strings, st_name, length), base + st_value);
         }
     }
 
@@ -149,8 +204,16 @@ public class ElfImg {
         return is64Bit ? elf.getLong() : elf.getInt();
     }
 
+    public boolean isEmpty() {
+        return symbols.isEmpty();
+    }
+
     public long getSymbAddress(String symbol) {
         var address = symbols.get(symbol);
         return address == null ? 0 : address;
+    }
+
+    public Map<String, Long> getSymbols() {
+        return symbols;
     }
 }
