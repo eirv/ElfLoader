@@ -171,6 +171,10 @@ public class ElfImg {
             int sym_count,
             int str_off,
             int str_size) {
+        if (sym_count == 0 || str_size == 0) {
+            return;
+        }
+
         var strings = new byte[str_size];
         elf.position(str_off);
         elf.get(strings);
