@@ -6,12 +6,12 @@ plugins {
 
 ext {
     compileSdk = 34
-    ndk = '29.0.12580605'
-    cmake = '3.22.1'
+    ndk = '27.2.12479018'
+    cmake = '3.30.5'
     java = JavaVersion.VERSION_17
 
     minSdk = 24
-    targetSdk = 33
+    targetSdk = 34
     version = '1.0.0'
     versionCode = 1
 }

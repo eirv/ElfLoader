@@ -26,6 +26,7 @@ import sun.misc.Unsafe;
 import java.io.FileDescriptor;
 import java.io.InterruptedIOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Random;
 
@@ -38,6 +39,7 @@ public class ElfLoader {
 
     private static final Unsafe theUnsafe;
     private static final Field artMethodField;
+    private static final Method nativeMethod;
     private static ElfLoader instance;
 
     static {
@@ -52,6 +54,8 @@ public class ElfLoader {
         artMethodField = field;
 
         try {
+            nativeMethod = ElfLoader.class.getDeclaredMethod("a");
+
             @SuppressLint("DiscouragedPrivateApi")
             var theUnsafeField = Unsafe.class.getDeclaredField("theUnsafe");
             theUnsafeField.setAccessible(true);
@@ -133,9 +137,6 @@ public class ElfLoader {
                         + u.arrayBaseOffset(dstArray.getClass());
         u.copyMemory(srcAddr, dstAddr, len);
     }
-
-    @SuppressWarnings("JavaJniMissingFunction")
-    private static native long a();
 
     private static long[] getNativeBridgeFunctions() {
         var elf = new ElfImg("/libnativebridge.so");
@@ -358,7 +359,7 @@ public class ElfLoader {
         try {
             var u = theUnsafe;
             var mem = mmapAddress = Os.mmap(0, u.pageSize(), 0x7, 0x22, FileDescriptor.in, 0);
-            registerNative(ElfLoader.class.getDeclaredMethod("a"), mem);
+            registerNative(nativeMethod, mem);
 
             var dl =
                     new ElfImg(
@@ -373,7 +374,7 @@ public class ElfLoader {
 
             initTrampoline(mem, arch, dlopen, dlsym, dlerror);
             return true;
-        } catch (ErrnoException | NoSuchMethodException ignored) {
+        } catch (ErrnoException ignored) {
         }
         return false;
     }
@@ -381,7 +382,7 @@ public class ElfLoader {
     public boolean load(String path) {
         if (!ensureInitialized() || path.length() >= 0x1000 - SHELLCODE_SIZE) return false;
         putString(mmapAddress + SHELLCODE_SIZE, path);
-        var result = a();
+        var result = callNativeMethod();
         var msg =
                 result >>> 56 != 0x10
                         ? getJniReturnedMessage(path, (int) result)
@@ -440,7 +441,7 @@ public class ElfLoader {
         }
         putString(mmapAddress + SHELLCODE_SIZE, libraryName);
 
-        var result = a();
+        var result = callNativeMethod();
 
         if (libraryFdOffset != 0) {
             theUnsafe.putInt(mmapAddress + libraryFdOffset, 0);
@@ -469,4 +470,24 @@ public class ElfLoader {
         mmapAddress = 0;
         instance = null;
     }
+
+    private static long callNativeMethod() {
+        try {
+            var r = nativeMethod.invoke(null);
+            assert r != null;
+            return (long) r;
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw rethrow(e.getTargetException());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <X extends Throwable> RuntimeException rethrow(Throwable e) throws X {
+        throw (X) e;
+    }
+
+    @SuppressWarnings("JavaJniMissingFunction")
+    private static native long a();
 }
