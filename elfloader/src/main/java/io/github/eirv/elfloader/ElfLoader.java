@@ -361,16 +361,27 @@ public class ElfLoader {
             var mem = mmapAddress = Os.mmap(0, u.pageSize(), 0x7, 0x22, FileDescriptor.in, 0);
             registerNative(nativeMethod, mem);
 
-            var dl =
-                    new ElfImg(
-                            u.addressSize() == 8
-                                    ? "/system/lib64/libdl.so"
-                                    : "/system/lib/libdl.so");
             var arch = ApiBridge.VMRuntime_vmInstructionSet();
+            var is64Bit = u.addressSize() == 8;
+            var hasMemoryElfSupport = "arm64".equals(arch);
+            var dl = new ElfImg(is64Bit ? "/system/lib64/libdl.so" : "/system/lib/libdl.so");
 
-            var dlopen = dl.getSymbAddress("arm64".equals(arch) ? "android_dlopen_ext" : "dlopen");
-            var dlsym = dl.getSymbAddress("dlsym");
-            var dlerror = dl.getSymbAddress("dlerror");
+            long dlopen, dlsym, dlerror;
+
+            if (dl.isEmpty()) {
+                // sdk < 26
+                var linker =
+                        new ElfImg(is64Bit ? "/system/bin/linker64" : "/system/bin/linker", true);
+                dlopen =
+                        linker.getSymbAddress(
+                                hasMemoryElfSupport ? "__dl_android_dlopen_ext" : "__dl_dlopen");
+                dlsym = linker.getSymbAddress("__dl_dlsym");
+                dlerror = linker.getSymbAddress("__dl_dlerror");
+            } else {
+                dlopen = dl.getSymbAddress(hasMemoryElfSupport ? "android_dlopen_ext" : "dlopen");
+                dlsym = dl.getSymbAddress("dlsym");
+                dlerror = dl.getSymbAddress("dlerror");
+            }
 
             initTrampoline(mem, arch, dlopen, dlsym, dlerror);
             return true;
