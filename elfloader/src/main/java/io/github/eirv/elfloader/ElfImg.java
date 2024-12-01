@@ -99,15 +99,8 @@ public class ElfImg {
             }
             base -= min_vaddr;
 
-            var dynsym_offset = 0;
-            var dynsym_count = 0;
-            var dynstr_offset = 0;
-            var dynstr_size = 0;
-
-            var symtab_offset = 0;
-            var symtab_count = 0;
-            var strtab_offset = 0;
-            var strtab_size = 0;
+            boolean dynsym = false;
+            boolean symtab = false;
 
             for (var i = 0; e_shnum > i; i++) {
                 elf.position(shoff + i * e_shentsize + 4);
@@ -124,39 +117,30 @@ public class ElfImg {
                 var str_offset = (int) getPointer(elf, is64Bit);
                 var str_size = (int) getPointer(elf, is64Bit);
                 if (sh_type == SHT_DYNSYM) {
-                    dynsym_offset = sym_offset;
-                    dynsym_count = sym_count;
-                    dynstr_offset = str_offset;
-                    dynstr_size = str_size;
+                    searchSymbols(
+                            symbols,
+                            base,
+                            elf,
+                            is64Bit,
+                            sym_offset,
+                            sym_count,
+                            str_offset,
+                            str_size);
+                    dynsym = true;
                     if (!searchDebugSymbols) break;
                 } else {
-                    symtab_offset = sym_offset;
-                    symtab_count = sym_count;
-                    strtab_offset = str_offset;
-                    strtab_size = str_size;
+                    searchSymbols(
+                            symbols,
+                            base,
+                            elf,
+                            is64Bit,
+                            sym_offset,
+                            sym_count,
+                            str_offset,
+                            str_size);
+                    symtab = true;
                 }
-                if (dynsym_count != 0 && symtab_count != 0) break;
-            }
-
-            searchSymbols(
-                    symbols,
-                    base,
-                    elf,
-                    is64Bit,
-                    dynsym_offset,
-                    dynsym_count,
-                    dynstr_offset,
-                    dynstr_size);
-            if (searchDebugSymbols) {
-                searchSymbols(
-                        symbols,
-                        base,
-                        elf,
-                        is64Bit,
-                        symtab_offset,
-                        symtab_count,
-                        strtab_offset,
-                        strtab_size);
+                if (dynsym && symtab) break;
             }
         } catch (IOException ignored) {
         }
