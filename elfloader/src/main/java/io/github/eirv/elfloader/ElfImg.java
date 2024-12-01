@@ -212,9 +212,27 @@ public class ElfImg {
         return symbols.isEmpty();
     }
 
-    public long getSymbAddress(String symbol) {
+    public long getSymbolAddress(String symbol) {
         var address = symbols.get(symbol);
         return address == null ? 0 : address;
+    }
+
+    public long getSymbolAddressBestMatch(String symbol) {
+        Map.Entry<String, Long> previous = null;
+        for (Map.Entry<String, Long> e : symbols.entrySet()) {
+            if (!e.getKey().contains(symbol)) continue;
+            if (previous == null) {
+                previous = e;
+            } else {
+                throw new UnsupportedOperationException(
+                        "Multiple symbols were found: '"
+                                + previous.getKey()
+                                + "', '"
+                                + e.getKey()
+                                + '\'');
+            }
+        }
+        return previous == null ? 0 : previous.getValue();
     }
 
     public Map<String, Long> getSymbols() {

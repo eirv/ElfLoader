@@ -140,15 +140,15 @@ public class ElfLoader {
 
     private static long[] getNativeBridgeFunctions() {
         var elf = new ElfImg("/libnativebridge.so");
-        long dlopen = elf.getSymbAddress("NativeBridgeLoadLibrary");
+        long dlopen = elf.getSymbolAddress("NativeBridgeLoadLibrary");
         long dlsym, dlerror;
         if (dlopen != 0) {
-            dlsym = elf.getSymbAddress("NativeBridgeGetTrampoline");
-            dlerror = elf.getSymbAddress("NativeBridgeGetError");
+            dlsym = elf.getSymbolAddress("NativeBridgeGetTrampoline");
+            dlerror = elf.getSymbolAddress("NativeBridgeGetError");
         } else {
-            dlopen = elf.getSymbAddress("_ZN7android23NativeBridgeLoadLibraryEPKci");
-            dlsym = elf.getSymbAddress("_ZN7android25NativeBridgeGetTrampolineEPvPKcS2_j");
-            dlerror = elf.getSymbAddress("_ZN7android20NativeBridgeGetErrorEv");
+            dlopen = elf.getSymbolAddress("_ZN7android23NativeBridgeLoadLibraryEPKci");
+            dlsym = elf.getSymbolAddress("_ZN7android25NativeBridgeGetTrampolineEPvPKcS2_j");
+            dlerror = elf.getSymbolAddress("_ZN7android20NativeBridgeGetErrorEv");
         }
         return dlopen == 0 || dlsym == 0 ? new long[3] : new long[] {dlopen, dlsym, dlerror};
     }
@@ -190,6 +190,26 @@ public class ElfLoader {
             throw new RuntimeException(e);
         }
     }
+
+    private static long callNativeMethod() {
+        try {
+            var r = nativeMethod.invoke(null);
+            assert r != null;
+            return (long) r;
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw rethrow(e.getTargetException());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <X extends Throwable> RuntimeException rethrow(Throwable e) throws X {
+        throw (X) e;
+    }
+
+    @SuppressWarnings("JavaJniMissingFunction")
+    private static native long a();
 
     private void initTrampoline(long mem, String arch, long dlopen, long dlsym, long dlerror) {
         Object code;
@@ -372,15 +392,38 @@ public class ElfLoader {
                 // sdk < 26
                 var linker =
                         new ElfImg(is64Bit ? "/system/bin/linker64" : "/system/bin/linker", true);
-                dlopen =
-                        linker.getSymbAddress(
-                                hasMemoryElfSupport ? "__dl_android_dlopen_ext" : "__dl_dlopen");
-                dlsym = linker.getSymbAddress("__dl_dlsym");
-                dlerror = linker.getSymbAddress("__dl_dlerror");
+                if (hasMemoryElfSupport) {
+                    dlopen = linker.getSymbolAddressBestMatch("android_dlopen_ext");
+                } else {
+                    dlopen = linker.getSymbolAddress("__dl_dlopen");
+                    if (dlopen == 0) {
+                        dlopen = linker.getSymbolAddressBestMatch("8__dlopen");
+                    }
+                }
+                if (dlopen == 0) {
+                    throw new UnsupportedOperationException("dlopen not found in linker");
+                }
+                dlsym = linker.getSymbolAddress("__dl_dlsym");
+                if (dlsym == 0) {
+                    dlsym = linker.getSymbolAddressBestMatch("7__dlsym");
+                }
+                if (dlsym == 0) {
+                    throw new UnsupportedOperationException("dlsym not found in linker");
+                }
+                dlerror = linker.getSymbolAddress("__dl_dlerror");
+                if (dlerror == 0) {
+                    dlerror = linker.getSymbolAddressBestMatch("9__dlerror");
+                }
             } else {
-                dlopen = dl.getSymbAddress(hasMemoryElfSupport ? "android_dlopen_ext" : "dlopen");
-                dlsym = dl.getSymbAddress("dlsym");
-                dlerror = dl.getSymbAddress("dlerror");
+                dlopen = dl.getSymbolAddress(hasMemoryElfSupport ? "android_dlopen_ext" : "dlopen");
+                if (dlopen == 0) {
+                    throw new UnsupportedOperationException("dlopen not found in libdl.so");
+                }
+                dlsym = dl.getSymbolAddress("dlsym");
+                if (dlsym == 0) {
+                    throw new UnsupportedOperationException("dlsym not found in libdl.so");
+                }
+                dlerror = dl.getSymbolAddress("dlerror");
             }
 
             initTrampoline(mem, arch, dlopen, dlsym, dlerror);
@@ -485,24 +528,4 @@ public class ElfLoader {
         mmapAddress = 0;
         instance = null;
     }
-
-    private static long callNativeMethod() {
-        try {
-            var r = nativeMethod.invoke(null);
-            assert r != null;
-            return (long) r;
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        } catch (InvocationTargetException e) {
-            throw rethrow(e.getTargetException());
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <X extends Throwable> RuntimeException rethrow(Throwable e) throws X {
-        throw (X) e;
-    }
-
-    @SuppressWarnings("JavaJniMissingFunction")
-    private static native long a();
 }
